@@ -3,29 +3,29 @@ import pandas as pd
 import requests
 from datetime import datetime, timedelta
 
-# Page Configuration
-st.set_page_config(page_title="SoMa Street Stream", page_icon="📸", layout="centered")
+# 1. Page Config: Switch to 'wide' to fit 4 columns
+st.set_page_config(page_title="SOMA Streets", page_icon="🏙️", layout="wide")
 
-# Title and Intro
-st.title("📸 SoMa Street Stream")
-st.write("Live feed of 'General Requests' and 'Encampments' in SoMa (last 90 days).")
+# Title
+st.header("SOMA: Recent Street Conditions")
+st.write("Live feed of 'General Requests' and 'Encampments' (last 90 days).")
 st.markdown("---")
 
-# 1. Calculate Date (90 days ago)
+# Calculate Date (90 days ago)
 ninety_days_ago = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%dT%H:%M:%S')
 
-# 2. SF Data API Endpoint (311 Cases)
+# SF Data API Endpoint
 base_url = "https://data.sfgov.org/resource/vw6y-z8j6.json"
 
-# 3. Construct the Query
+# Construct the Query
 params = {
     "$where": f"analysis_neighborhood = 'South of Market' AND requested_datetime > '{ninety_days_ago}' AND media_url IS NOT NULL AND (service_name LIKE '%General Request%' OR service_name LIKE '%Encampment%')",
     "$order": "requested_datetime DESC",
     "$limit": 200
 }
 
-# 4. Fetch Data Function
-@st.cache_data(ttl=300) # Refreshes data every 5 minutes
+# Fetch Data
+@st.cache_data(ttl=300)
 def get_data():
     try:
         r = requests.get(base_url, params=params)
@@ -36,52 +36,56 @@ def get_data():
     except:
         return pd.DataFrame()
 
-# 5. Load Data
 df = get_data()
 
-# 6. Display the Feed
+# Display the Feed
 if not df.empty:
+    # 2. Define 4 columns for the grid
+    cols = st.columns(4)
+    
     for index, row in df.iterrows():
-        # Card container
-        with st.container(border=True):
-            
-            # --- FIX START: Extract URL from Dictionary ---
-            media_item = row.get('media_url')
-            image_url = None
-            
-            if isinstance(media_item, dict):
-                # Socrata returns {'url': '...', 'description': '...'}
-                image_url = media_item.get('url')
-            elif isinstance(media_item, str):
-                # Just in case it returns a plain string
-                image_url = media_item
-            # --- FIX END ---
+        # Cycle through columns: 0, 1, 2, 3, 0, 1...
+        with cols[index % 4]:
+            with st.container(border=True):
+                
+                # --- Image Handling ---
+                media_item = row.get('media_url')
+                image_url = None
+                if isinstance(media_item, dict):
+                    image_url = media_item.get('url')
+                elif isinstance(media_item, str):
+                    image_url = media_item
 
-            # Image
-            if image_url:
-                st.image(image_url, use_container_width=True)
-            
-            # Details
-            st.subheader(f"{row.get('service_name', 'Report')}")
-            
-            # Format Date
-            if 'requested_datetime' in row:
-                date_str = pd.to_datetime(row['requested_datetime']).strftime('%B %d at %I:%M %p')
-            else:
-                date_str = "Date Unknown"
-            
-            st.caption(f"📅 {date_str} | 📍 {row.get('address', 'Location N/A')}")
-            
-            # Status badge
-            status = row.get('status_description', 'Open')
-            if status == 'Open':
-                st.warning(f"Status: {status}")
-            else:
-                st.success(f"Status: {status}")
+                if image_url:
+                    st.image(image_url, use_container_width=True)
+                
+                # --- Header ---
+                st.subheader(f"{row.get('service_name', 'Report')}")
+                
+                # --- Date & Clickable Address ---
+                if 'requested_datetime' in row:
+                    date_str = pd.to_datetime(row['requested_datetime']).strftime('%b %d')
+                else:
+                    date_str = "Unknown"
+                
+                address = row.get('address', 'Location N/A')
+                # Standard Google Maps Query Link
+                map_url = f"https://www.google.com/maps/search/?api=1&query={address.replace(' ', '+')}"
+                
+                st.markdown(f"**{date_str}** | [{address}]({map_url})")
+                
+                # --- Status Badge ---
+                status = row.get('status_description', 'Open')
+                if status == 'Open':
+                    st.warning(f"Status: {status}")
+                else:
+                    st.success(f"Status: {status}")
 
-            # Notes
-            if 'status_notes' in row and pd.notna(row['status_notes']):
-                st.markdown(f"**Note:** {row['status_notes']}")
+                # --- Smart Notes ---
+                raw_note = row.get('status_notes', '')
+                if pd.notna(raw_note):
+                    if raw_note.strip().lower() != status.lower():
+                        st.caption(f"📝 {raw_note}")
 else:
     st.info("No photos found in the last 90 days matching these criteria.")
 
