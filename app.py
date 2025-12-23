@@ -12,16 +12,6 @@ st.markdown("""
         div[data-testid="stVerticalBlock"] > div { gap: 0.2rem; }
         .stMarkdown p { font-size: 0.9rem; margin-bottom: 0px; }
         div.stButton > button { width: 100%; }
-        /* Style for the 'Login Required' placeholder */
-        .login-box {
-            background-color: #f0f2f6;
-            border: 1px dashed #ccc;
-            border-radius: 5px;
-            padding: 40px 20px;
-            text-align: center;
-            color: #666;
-            margin-bottom: 10px;
-        }
     </style>
     <meta name="robots" content="noindex, nofollow">
 """, unsafe_allow_html=True)
@@ -61,27 +51,22 @@ def get_data(query_limit):
 
 df = get_data(st.session_state.limit)
 
-# 6. Helper: Parse URL
-def get_image_info(media_item):
-    """
-    Returns a tuple: (clean_url, is_viewable_image)
-    """
-    if not media_item: return None, False
+# 6. Helper to Validate Images (REVERTED TO STRICT MODE)
+def get_valid_image_url(media_item):
+    if not media_item: return None
     
+    # Extract string from dict if necessary
     url = media_item.get('url') if isinstance(media_item, dict) else media_item
-    if not url: return None, False
+    if not url: return None
     
     clean_url = url.split('?')[0].lower()
     
-    # Case A: Standard Image (Public)
+    # We ONLY allow actual image files. 
+    # URLs containing "download_attachments" are HTML portals and must be ignored.
     if clean_url.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp')):
-        return url, True
+        return url
         
-    # Case B: Verint Portal (Locked/Login Required)
-    if "download_attachments" in clean_url:
-        return url, False
-        
-    return None, False
+    return None
 
 # 7. Display Feed
 if not df.empty:
@@ -94,30 +79,17 @@ if not df.empty:
         if 'duplicate' in notes:
             continue
 
-        # --- Get Image Info ---
-        full_url, is_viewable = get_image_info(row.get('media_url'))
+        # --- Validate Image ---
+        image_url = get_valid_image_url(row.get('media_url'))
         
-        # We now accept BOTH viewable images and Portal links
-        if full_url:
+        if image_url:
             col_index = display_count % 4
             
             with cols[col_index]:
                 with st.container(border=True):
                     
-                    if is_viewable:
-                        # Show the actual photo
-                        st.image(full_url, use_container_width=True)
-                    else:
-                        # Show a placeholder for Locked/Web Portal reports
-                        st.markdown(f"""
-                            <div class="login-box">
-                                🔒 <b>Login Required</b><br>
-                                <span style="font-size: 0.8em">Image submitted via Web Portal</span>
-                            </div>
-                        """, unsafe_allow_html=True)
-                        st.markdown(f"[View on 311 Portal]({full_url})")
-
-                    # Metadata
+                    st.image(image_url, use_container_width=True)
+                    
                     if 'requested_datetime' in row:
                         date_str = pd.to_datetime(row['requested_datetime']).strftime('%b %d, %I:%M %p')
                     else:
