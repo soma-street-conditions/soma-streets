@@ -12,33 +12,6 @@ st.markdown("""
         div[data-testid="stVerticalBlock"] > div { gap: 0.2rem; }
         .stMarkdown p { font-size: 0.9rem; margin-bottom: 0px; }
         div.stButton > button { width: 100%; }
-        
-        /* Style for the 'View on Portal' card */
-        .portal-card {
-            background-color: #262730;
-            border: 1px solid #444;
-            border-radius: 5px;
-            padding: 15px;
-            text-align: center;
-            color: #888;
-            margin-bottom: 10px;
-            height: 120px; /* Smaller height */
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            font-size: 0.9em;
-        }
-        .portal-card a {
-            color: #4da6ff;
-            text-decoration: none;
-            font-weight: bold;
-            margin-top: 8px;
-            font-size: 0.9em;
-        }
-        .portal-card a:hover {
-            text-decoration: underline;
-        }
     </style>
     <meta name="robots" content="noindex, nofollow">
 """, unsafe_allow_html=True)
@@ -120,13 +93,8 @@ if not df.empty:
                         # Display real image
                         st.image(full_url, use_container_width=True)
                     else:
-                        # Display Minimal "External Link" Card
-                        st.markdown(f"""
-                            <div class="portal-card">
-                                <span>Image on Web Portal</span>
-                                <a href="{full_url}" target="_blank">View Link ↗</a>
-                            </div>
-                        """, unsafe_allow_html=True)
+                        # No Image? Just show a subtle text link
+                        st.caption(f"[View on Web Portal]({full_url})")
 
                     # Metadata
                     if 'requested_datetime' in row:
