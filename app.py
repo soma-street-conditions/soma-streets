@@ -102,4 +102,64 @@ def get_image_info(media_item):
 # 7. Display Feed
 if not df.empty:
     cols = st.columns(4)
-    display_count =
+    display_count = 0
+    
+    for index, row in df.iterrows():
+        notes = str(row.get('status_notes', '')).lower()
+        if 'duplicate' in notes:
+            continue
+
+        # Get URL Info
+        full_url, is_viewable = get_image_info(row.get('media_url'))
+        
+        if full_url:
+            col_index = display_count % 4
+            
+            with cols[col_index]:
+                with st.container(border=True):
+                    
+                    if is_viewable:
+                        # Display real image
+                        st.image(full_url, use_container_width=True)
+                    else:
+                        # Display "External Link" Card
+                        st.markdown(f"""
+                            <div class="portal-card">
+                                <div style="font-size: 2em;">🌐</div>
+                                <div style="margin-top: 10px; font-size: 0.9em; color: #aaa;">View on Web Portal</div>
+                                <a href="{full_url}" target="_blank">Open Link</a>
+                            </div>
+                        """, unsafe_allow_html=True)
+
+                    # Metadata
+                    if 'requested_datetime' in row:
+                        date_str = pd.to_datetime(row['requested_datetime']).strftime('%b %d, %I:%M %p')
+                    else:
+                        date_str = "?"
+                    
+                    address = row.get('address', 'Location N/A')
+                    short_address = address.split(',')[0] 
+                    map_url = f"https://www.google.com/maps/search/?api=1&query={address.replace(' ', '+')}"
+                    
+                    # Removed [Source] link
+                    st.markdown(f"**{date_str}** | [{short_address}]({map_url})")
+            
+            display_count += 1
+            
+    if display_count == 0:
+        st.info("No images found (duplicates filtered).")
+    
+    # Load More Button
+    st.markdown("---")
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
+        if st.button(f"Load More Records (Current: {st.session_state.limit})"):
+            st.session_state.limit += 300
+            st.rerun()
+
+else:
+    st.info("No records found.")
+
+# Footer
+st.markdown("---")
+st.caption("Data source: [DataSF | Open Data Portal](https://data.sfgov.org/City-Infrastructure/311-Cases/vw6y-z8j6/about_data)")
