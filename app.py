@@ -28,7 +28,7 @@ if 'limit' not in st.session_state:
 
 # Header
 st.header("SOMA: Recent Street Conditions")
-st.write("Live feed of conditions in SoMa (last 90 days).")
+st.write("Live feed of conditions in SOMA (last 90 days).")
 st.markdown("---")
 
 # 3. Date & API Setup
@@ -45,7 +45,6 @@ params = {
 # 5. Fetch Data
 @st.cache_data(ttl=300)
 def get_data(query_limit):
-    # We pass query_limit just to ensure cache invalidates when limit changes
     try:
         r = requests.get(base_url, params=params)
         if r.status_code == 200:
@@ -109,7 +108,6 @@ if not df.empty:
     
     # 8. LOAD MORE BUTTON
     st.markdown("---")
-    # Centered button via columns
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
         if st.button(f"Load More Records (Current: {st.session_state.limit})"):
