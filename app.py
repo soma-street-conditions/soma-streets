@@ -12,17 +12,30 @@ st.markdown("""
         div[data-testid="stVerticalBlock"] > div { gap: 0.2rem; }
         .stMarkdown p { font-size: 0.9rem; margin-bottom: 0px; }
         div.stButton > button { width: 100%; }
+        /* Remove extra padding around markdown images */
+        .clickable-img-container {
+            margin-bottom: 5px;
+        }
+        .clickable-img {
+            width: 100%;
+            border-radius: 5px;
+            transition: transform 0.2s;
+            cursor: zoom-in;
+        }
+        .clickable-img:hover {
+            transform: scale(1.02);
+        }
     </style>
     <meta name="robots" content="noindex, nofollow">
 """, unsafe_allow_html=True)
 
 # 2. Session State for "Load More"
+# UPDATED: Increased default to 800 to mimic "infinite scroll" behavior
 if 'limit' not in st.session_state:
-    st.session_state.limit = 300
+    st.session_state.limit = 800
 
 # Header
 st.header("SOMA: Recent Street Conditions")
-# UPDATED TEXT: Changed "Live feed" to "Daily feed"
 st.write("Daily feed of 'Homeless Concerns' and 'Encampments' in SOMA via 311.")
 st.markdown("Download the Solve SF App to report your concerns to the City of San Francisco. ([iOS](https://apps.apple.com/us/app/solve-sf/id6737751237) | [Android](https://play.google.com/store/apps/details?id=com.woahfinally.solvesf))")
 st.markdown("---")
@@ -84,16 +97,21 @@ if not df.empty:
         # Get URL Info
         full_url, is_viewable = get_image_info(row.get('media_url'))
         
-        # STRICT FILTER: We now REQUIRE 'is_viewable' to be True.
-        # This silently filters out the "Web Portal" links for now.
+        # STRICT FILTER: Only show records with viewable images
         if full_url and is_viewable:
             col_index = display_count % 4
             
             with cols[col_index]:
                 with st.container(border=True):
                     
-                    # Display real image
-                    st.image(full_url, use_container_width=True)
+                    # --- CLICKABLE IMAGE ---
+                    st.markdown(f"""
+                        <div class="clickable-img-container">
+                            <a href="{full_url}" target="_blank">
+                                <img src="{full_url}" class="clickable-img" loading="lazy">
+                            </a>
+                        </div>
+                    """, unsafe_allow_html=True)
 
                     # Metadata
                     if 'requested_datetime' in row:
@@ -112,7 +130,7 @@ if not df.empty:
     if display_count == 0:
         st.info("No viewable images found (Web Portal links hidden).")
     
-    # Load More Button
+    # Load More Button (Backup)
     st.markdown("---")
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
@@ -123,6 +141,17 @@ if not df.empty:
 else:
     st.info("No records found.")
 
-# Footer
+# Footer & Methodology
 st.markdown("---")
 st.caption("Data source: [DataSF | Open Data Portal](https://data.sfgov.org/City-Infrastructure/311-Cases/vw6y-z8j6/about_data)")
+
+with st.expander("Methodology & Notes"):
+    st.markdown("""
+    **Filters Applied:**
+    * **Neighborhood:** South of Market (SOMA) only.
+    * **Categories:** 'Encampments' and 'Homeless Concerns' (General Requests).
+    * **Timeframe:** Rolling 90-day window.
+    
+    **Data Limitations:**
+    This feed exclusively visualizes reports containing publicly accessible images (typically submitted via mobile apps). Reports submitted via the web portal are currently excluded from this view as their images are hosted on a secure, password-protected system that prevents automated display.
+    """)
