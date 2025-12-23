@@ -6,6 +6,19 @@ from datetime import datetime, timedelta
 # 1. Page Config
 st.set_page_config(page_title="SOMA Streets", page_icon="🏙️", layout="wide")
 
+# Custom CSS to reduce padding and tighten the look
+st.markdown("""
+    <style>
+        div[data-testid="stVerticalBlock"] > div {
+            gap: 0.2rem;
+        }
+        .stMarkdown p {
+            font-size: 0.9rem;
+            margin-bottom: 0px;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 # Header
 st.header("SOMA: Recent Street Conditions")
 st.write("Live feed of conditions in SoMa (last 90 days).")
@@ -38,78 +51,45 @@ df = get_data()
 
 # 5. Helper to Validate Images
 def get_valid_image_url(media_item):
-    """
-    Extracts URL and checks if it ends in a valid image extension.
-    Returns None if invalid.
-    """
-    if not media_item:
-        return None
-    
-    # Extract string from dict if necessary
-    url = None
-    if isinstance(media_item, dict):
-        url = media_item.get('url')
-    elif isinstance(media_item, str):
-        url = media_item
-        
-    if not url:
-        return None
-
-    # Check extension (ignoring query params like ?token=123)
+    if not media_item: return None
+    url = media_item.get('url') if isinstance(media_item, dict) else media_item
+    if not url: return None
     clean_url = url.split('?')[0].lower()
-    valid_exts = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp')
-    
-    if clean_url.endswith(valid_exts):
+    if clean_url.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp')):
         return url
     return None
 
 # 6. Display Feed
 if not df.empty:
     cols = st.columns(4)
-    display_count = 0  # Counter to ensure grid fills evenly
+    display_count = 0
     
     for index, row in df.iterrows():
-        # Validate the image
         image_url = get_valid_image_url(row.get('media_url'))
         
-        # If valid, show the card
         if image_url:
             col_index = display_count % 4
             
             with cols[col_index]:
                 with st.container(border=True):
                     
-                    # Display Image
+                    # 1. The Photo
                     st.image(image_url, use_container_width=True)
                     
-                    # --- NO HEADER (Removed "Service Name") ---
-                    
-                    # Date & Map Link
+                    # 2. Minimal Metadata (Date | Location)
                     if 'requested_datetime' in row:
                         date_str = pd.to_datetime(row['requested_datetime']).strftime('%b %d')
                     else:
-                        date_str = "Unknown"
+                        date_str = "?"
                     
                     address = row.get('address', 'Location N/A')
+                    # Shorten address if it's very long to keep lines clean
+                    short_address = address.split(',')[0] 
                     map_url = f"https://www.google.com/maps/search/?api=1&query={address.replace(' ', '+')}"
                     
-                    # Date | Address
-                    st.markdown(f"**{date_str}** | [{address}]({map_url})")
-                    
-                    # Status
-                    status = row.get('status_description', 'Open')
-                    if status == 'Open':
-                        st.warning(f"Status: {status}")
-                    else:
-                        st.success(f"Status: {status}")
-
-                    # Smart Notes
-                    raw_note = row.get('status_notes', '')
-                    if pd.notna(raw_note):
-                        if raw_note.strip().lower() != status.lower():
-                            st.caption(f"📝 {raw_note}")
+                    # Single clean line of text
+                    st.markdown(f"**{date_str}** | [{short_address}]({map_url})")
             
-            # Increment counter only if we actually displayed a card
             display_count += 1
             
     if display_count == 0:
@@ -117,6 +97,3 @@ if not df.empty:
 
 else:
     st.info("No records found.")
-
-st.markdown("---")
-st.caption("Data source: DataSF 311 Cases. Updates automatically.")
