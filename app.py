@@ -6,72 +6,13 @@ from datetime import datetime, timedelta
 # 1. Page Config
 st.set_page_config(page_title="SOMA Streets", page_icon="🏙️", layout="wide")
 
-# --- LIGHTBOX & STYLING ---
-# This block creates the Javascript "Lightbox" and the CSS to style it.
+# --- NO CRAWL & STYLING ---
 st.markdown("""
     <style>
         div[data-testid="stVerticalBlock"] > div { gap: 0.2rem; }
         .stMarkdown p { font-size: 0.9rem; margin-bottom: 0px; }
         div.stButton > button { width: 100%; }
-        
-        /* Thumbnail Image Styling */
-        .clickable-img {
-            width: 100%;
-            border-radius: 5px;
-            cursor: zoom-in;
-            transition: transform 0.2s;
-            display: block;
-        }
-        .clickable-img:hover {
-            opacity: 0.9;
-            transform: scale(1.02);
-        }
-        
-        /* Lightbox Overlay (Hidden by default) */
-        #lightbox-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: rgba(0, 0, 0, 0.9);
-            z-index: 999999;
-            display: none; /* Hidden until clicked */
-            justify-content: center;
-            align-items: center;
-            cursor: zoom-out;
-        }
-        
-        /* Fullscreen Image Styling */
-        #lightbox-image {
-            max-width: 90%;
-            max-height: 90%;
-            border-radius: 5px;
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
-            object-fit: contain;
-        }
     </style>
-
-    <div id="lightbox-overlay" onclick="closeLightbox()">
-        <img id="lightbox-image" src="">
-    </div>
-
-    <script>
-        // Function to open the lightbox
-        function openLightbox(url) {
-            const overlay = document.getElementById('lightbox-overlay');
-            const img = document.getElementById('lightbox-image');
-            img.src = url;
-            overlay.style.display = 'flex';
-        }
-
-        // Function to close the lightbox
-        function closeLightbox() {
-            const overlay = document.getElementById('lightbox-overlay');
-            overlay.style.display = 'none';
-        }
-    </script>
-    
     <meta name="robots" content="noindex, nofollow">
 """, unsafe_allow_html=True)
 
@@ -116,8 +57,12 @@ def get_image_info(media_item):
     url = media_item.get('url') if isinstance(media_item, dict) else media_item
     if not url: return None, False
     clean_url = url.split('?')[0].lower()
+    
+    # Case A: Standard Image (Public Cloud)
     if clean_url.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp')):
         return url, True
+        
+    # Case B: Verint Portal or other Web Links
     return url, False
 
 # 7. Display Feed
@@ -139,11 +84,9 @@ if not df.empty:
             with cols[col_index]:
                 with st.container(border=True):
                     
-                    # --- JAVASCRIPT TRIGGER ---
-                    # Instead of an <a> link, we use onclick="openLightbox(...)"
-                    st.markdown(f"""
-                        <img src="{full_url}" class="clickable-img" onclick="openLightbox('{full_url}')" loading="lazy">
-                    """, unsafe_allow_html=True)
+                    # --- STANDARD IMAGE COMPONENT ---
+                    # This includes the native "Expand/Fullscreen" button in the corner
+                    st.image(full_url, use_container_width=True)
 
                     # Metadata
                     if 'requested_datetime' in row:
