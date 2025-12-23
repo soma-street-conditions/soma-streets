@@ -7,12 +7,21 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="SOMA Streets", page_icon="🏙️", layout="wide")
 
 # --- NO CRAWL & STYLING ---
-# The <meta> tag below tells Google/Bing NOT to index this page.
 st.markdown("""
     <style>
         div[data-testid="stVerticalBlock"] > div { gap: 0.2rem; }
         .stMarkdown p { font-size: 0.9rem; margin-bottom: 0px; }
         div.stButton > button { width: 100%; }
+        /* Style for the 'Login Required' placeholder */
+        .login-box {
+            background-color: #f0f2f6;
+            border: 1px dashed #ccc;
+            border-radius: 5px;
+            padding: 40px 20px;
+            text-align: center;
+            color: #666;
+            margin-bottom: 10px;
+        }
     </style>
     <meta name="robots" content="noindex, nofollow">
 """, unsafe_allow_html=True)
@@ -23,7 +32,7 @@ if 'limit' not in st.session_state:
 
 # Header
 st.header("SOMA: Recent Street Conditions")
-st.write("Live feed of 'Homeless Concerns' and 'Encampments' in SOMA (last 90 days).")
+st.write("Live feed of 'Homeless Concerns' and 'Encampments' in SOMA via 311.")
 st.markdown("Download the Solve SF App to report your concerns to the City of San Francisco. ([iOS](https://apps.apple.com/us/app/solve-sf/id6737751237) | [Android](https://play.google.com/store/apps/details?id=com.woahfinally.solvesf))")
 st.markdown("---")
 
@@ -32,7 +41,6 @@ ninety_days_ago = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%dT%H:%M
 base_url = "https://data.sfgov.org/resource/vw6y-z8j6.json"
 
 # 4. Query
-# Note: "General Request" in the database = "Homeless Concerns" in our display
 params = {
     "$where": f"analysis_neighborhood = 'South of Market' AND requested_datetime > '{ninety_days_ago}' AND media_url IS NOT NULL AND (service_name LIKE '%General Request%' OR service_name LIKE '%Encampment%')",
     "$order": "requested_datetime DESC",
@@ -53,15 +61,27 @@ def get_data(query_limit):
 
 df = get_data(st.session_state.limit)
 
-# 6. Helper to Validate Images
-def get_valid_image_url(media_item):
-    if not media_item: return None
+# 6. Helper: Parse URL
+def get_image_info(media_item):
+    """
+    Returns a tuple: (clean_url, is_viewable_image)
+    """
+    if not media_item: return None, False
+    
     url = media_item.get('url') if isinstance(media_item, dict) else media_item
-    if not url: return None
+    if not url: return None, False
+    
     clean_url = url.split('?')[0].lower()
+    
+    # Case A: Standard Image (Public)
     if clean_url.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp')):
-        return url
-    return None
+        return url, True
+        
+    # Case B: Verint Portal (Locked/Login Required)
+    if "download_attachments" in clean_url:
+        return url, False
+        
+    return None, False
 
 # 7. Display Feed
 if not df.empty:
@@ -74,17 +94,30 @@ if not df.empty:
         if 'duplicate' in notes:
             continue
 
-        # --- Validate Image ---
-        image_url = get_valid_image_url(row.get('media_url'))
+        # --- Get Image Info ---
+        full_url, is_viewable = get_image_info(row.get('media_url'))
         
-        if image_url:
+        # We now accept BOTH viewable images and Portal links
+        if full_url:
             col_index = display_count % 4
             
             with cols[col_index]:
                 with st.container(border=True):
                     
-                    st.image(image_url, use_container_width=True)
-                    
+                    if is_viewable:
+                        # Show the actual photo
+                        st.image(full_url, use_container_width=True)
+                    else:
+                        # Show a placeholder for Locked/Web Portal reports
+                        st.markdown(f"""
+                            <div class="login-box">
+                                🔒 <b>Login Required</b><br>
+                                <span style="font-size: 0.8em">Image submitted via Web Portal</span>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        st.markdown(f"[View on 311 Portal]({full_url})")
+
+                    # Metadata
                     if 'requested_datetime' in row:
                         date_str = pd.to_datetime(row['requested_datetime']).strftime('%b %d, %I:%M %p')
                     else:
