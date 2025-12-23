@@ -26,9 +26,10 @@ st.markdown("""
 if 'limit' not in st.session_state:
     st.session_state.limit = 300
 
-# Header
+# Header & Download Links
 st.header("SOMA: Recent Street Conditions")
 st.write("Live feed of conditions in SOMA (last 90 days).")
+st.markdown("Download the Solve SF App to report your concerns to the City of San Francisco ([iOS](https://apps.apple.com/us/app/solve-sf/id6737751237) | [Android](https://play.google.com/store/apps/details?id=com.woahfinally.solvesf))")
 st.markdown("---")
 
 # 3. Date & API Setup
