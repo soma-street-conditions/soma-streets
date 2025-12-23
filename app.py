@@ -22,7 +22,8 @@ if 'limit' not in st.session_state:
 
 # Header
 st.header("SOMA: Recent Street Conditions")
-st.write("Live feed of 'Homeless Concerns' and 'Encampments' in SOMA via 311.")
+# UPDATED TEXT: Changed "Live feed" to "Daily feed"
+st.write("Daily feed of 'Homeless Concerns' and 'Encampments' in SOMA via 311.")
 st.markdown("Download the Solve SF App to report your concerns to the City of San Francisco. ([iOS](https://apps.apple.com/us/app/solve-sf/id6737751237) | [Android](https://play.google.com/store/apps/details?id=com.woahfinally.solvesf))")
 st.markdown("---")
 
@@ -83,18 +84,16 @@ if not df.empty:
         # Get URL Info
         full_url, is_viewable = get_image_info(row.get('media_url'))
         
-        if full_url:
+        # STRICT FILTER: We now REQUIRE 'is_viewable' to be True.
+        # This silently filters out the "Web Portal" links for now.
+        if full_url and is_viewable:
             col_index = display_count % 4
             
             with cols[col_index]:
                 with st.container(border=True):
                     
-                    if is_viewable:
-                        # Display real image
-                        st.image(full_url, use_container_width=True)
-                    else:
-                        # No Image? Just show a subtle text link
-                        st.caption(f"[View on Web Portal]({full_url})")
+                    # Display real image
+                    st.image(full_url, use_container_width=True)
 
                     # Metadata
                     if 'requested_datetime' in row:
@@ -111,7 +110,7 @@ if not df.empty:
             display_count += 1
             
     if display_count == 0:
-        st.info("No images found (duplicates filtered).")
+        st.info("No viewable images found (Web Portal links hidden).")
     
     # Load More Button
     st.markdown("---")
