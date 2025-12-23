@@ -18,28 +18,26 @@ st.markdown("""
             background-color: #262730;
             border: 1px solid #444;
             border-radius: 5px;
-            padding: 40px 10px;
+            padding: 15px;
             text-align: center;
-            color: #ddd;
+            color: #888;
             margin-bottom: 10px;
-            height: 200px;
+            height: 120px; /* Smaller height */
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
+            font-size: 0.9em;
         }
         .portal-card a {
             color: #4da6ff;
             text-decoration: none;
             font-weight: bold;
-            margin-top: 10px;
-            border: 1px solid #4da6ff;
-            padding: 5px 15px;
-            border-radius: 15px;
+            margin-top: 8px;
+            font-size: 0.9em;
         }
         .portal-card a:hover {
-            background-color: #4da6ff;
-            color: white;
+            text-decoration: underline;
         }
     </style>
     <meta name="robots" content="noindex, nofollow">
@@ -122,12 +120,11 @@ if not df.empty:
                         # Display real image
                         st.image(full_url, use_container_width=True)
                     else:
-                        # Display "External Link" Card
+                        # Display Minimal "External Link" Card
                         st.markdown(f"""
                             <div class="portal-card">
-                                <div style="font-size: 2em;">🌐</div>
-                                <div style="margin-top: 10px; font-size: 0.9em; color: #aaa;">View on Web Portal</div>
-                                <a href="{full_url}" target="_blank">Open Link</a>
+                                <span>Image on Web Portal</span>
+                                <a href="{full_url}" target="_blank">View Link ↗</a>
                             </div>
                         """, unsafe_allow_html=True)
 
@@ -141,7 +138,6 @@ if not df.empty:
                     short_address = address.split(',')[0] 
                     map_url = f"https://www.google.com/maps/search/?api=1&query={address.replace(' ', '+')}"
                     
-                    # Removed [Source] link
                     st.markdown(f"**{date_str}** | [{short_address}]({map_url})")
             
             display_count += 1
