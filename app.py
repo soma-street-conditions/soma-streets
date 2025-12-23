@@ -6,37 +6,33 @@ from datetime import datetime, timedelta
 # 1. Page Config
 st.set_page_config(page_title="SOMA Streets", page_icon="🏙️", layout="wide")
 
-# Custom CSS
+# --- NO CRAWL & STYLING ---
+# The <meta> tag below tells Google/Bing NOT to index this page.
 st.markdown("""
     <style>
-        div[data-testid="stVerticalBlock"] > div {
-            gap: 0.2rem;
-        }
-        .stMarkdown p {
-            font-size: 0.9rem;
-            margin-bottom: 0px;
-        }
-        div.stButton > button {
-            width: 100%;
-        }
+        div[data-testid="stVerticalBlock"] > div { gap: 0.2rem; }
+        .stMarkdown p { font-size: 0.9rem; margin-bottom: 0px; }
+        div.stButton > button { width: 100%; }
     </style>
+    <meta name="robots" content="noindex, nofollow">
 """, unsafe_allow_html=True)
 
 # 2. Session State for "Load More"
 if 'limit' not in st.session_state:
     st.session_state.limit = 300
 
-# Header & Download Links
+# Header
 st.header("SOMA: Recent Street Conditions")
-st.write("Live feed of conditions in SOMA (last 90 days).")
-st.markdown("Download the Solve SF App to report your concerns to the City of San Francisco ([iOS](https://apps.apple.com/us/app/solve-sf/id6737751237) | [Android](https://play.google.com/store/apps/details?id=com.woahfinally.solvesf))")
+st.write("Live feed of 'Homeless Concerns' and 'Encampments' in SOMA (last 90 days).")
+st.markdown("Download the Solve SF App to report your concerns to the City of San Francisco. ([iOS](https://apps.apple.com/us/app/solve-sf/id6737751237) | [Android](https://play.google.com/store/apps/details?id=com.woahfinally.solvesf))")
 st.markdown("---")
 
 # 3. Date & API Setup
 ninety_days_ago = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%dT%H:%M:%S')
 base_url = "https://data.sfgov.org/resource/vw6y-z8j6.json"
 
-# 4. Query (Using dynamic limit)
+# 4. Query
+# Note: "General Request" in the database = "Homeless Concerns" in our display
 params = {
     "$where": f"analysis_neighborhood = 'South of Market' AND requested_datetime > '{ninety_days_ago}' AND media_url IS NOT NULL AND (service_name LIKE '%General Request%' OR service_name LIKE '%Encampment%')",
     "$order": "requested_datetime DESC",
@@ -87,10 +83,8 @@ if not df.empty:
             with cols[col_index]:
                 with st.container(border=True):
                     
-                    # Image
                     st.image(image_url, use_container_width=True)
                     
-                    # Metadata
                     if 'requested_datetime' in row:
                         date_str = pd.to_datetime(row['requested_datetime']).strftime('%b %d, %I:%M %p')
                     else:
@@ -117,3 +111,7 @@ if not df.empty:
 
 else:
     st.info("No records found.")
+
+# Footer with Citation
+st.markdown("---")
+st.caption("Data source: [DataSF | Open Data Portal](https://data.sfgov.org/City-Infrastructure/311-Cases/vw6y-z8j6/about_data)")
