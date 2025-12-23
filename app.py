@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import requests
-from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 
 # 1. Page Config
@@ -13,15 +12,34 @@ st.markdown("""
         div[data-testid="stVerticalBlock"] > div { gap: 0.2rem; }
         .stMarkdown p { font-size: 0.9rem; margin-bottom: 0px; }
         div.stButton > button { width: 100%; }
-        .private-box {
-            background-color: #f0f2f6;
-            border: 1px dashed #999;
+        
+        /* Style for the 'View on Portal' card */
+        .portal-card {
+            background-color: #262730; /* Matches Streamlit Dark Mode */
+            border: 1px solid #444;
             border-radius: 5px;
             padding: 40px 10px;
             text-align: center;
-            color: #555;
+            color: #ddd;
             margin-bottom: 10px;
-            font-size: 0.9em;
+            height: 200px; /* Fixed height to match images approx */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .portal-card a {
+            color: #4da6ff;
+            text-decoration: none;
+            font-weight: bold;
+            margin-top: 10px;
+            border: 1px solid #4da6ff;
+            padding: 5px 15px;
+            border-radius: 15px;
+        }
+        .portal-card a:hover {
+            background-color: #4da6ff;
+            color: white;
         }
     </style>
     <meta name="robots" content="noindex, nofollow">
@@ -62,42 +80,10 @@ def get_data(query_limit):
 
 df = get_data(st.session_state.limit)
 
-# 6. SCRAPER FUNCTION: "Unwrap" the Verint Page
-@st.cache_data(ttl=3600) # Cache the scraped URL for 1 hour
-def extract_image_from_verint(wrapper_url):
+# 6. Helper: Identify Image vs Portal Link
+def get_image_info(media_item):
     """
-    Visits the Verint 'View Attachments' page and extracts the first real image URL.
-    """
-    try:
-        # Fake a browser visit so the server doesn't block us
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        response = requests.get(wrapper_url, headers=headers, timeout=5)
-        
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Find all images
-            images = soup.find_all('img')
-            
-            for img in images:
-                src = img.get('src')
-                if src:
-                    # Filter out tiny icons or logos if necessary
-                    # Usually, the main photo is a .jpg or .jpeg
-                    if any(x in src.lower() for x in ['.jpg', '.jpeg', '.png']):
-                        # If the src is relative (starts with /), append the domain
-                        if src.startswith('/'):
-                            # Base domain from your screenshot
-                            return "https://sanfrancisco.form.us.empro.verintcloudservices.com" + src
-                        return src
-        return None
-    except:
-        return None
-
-# 7. Helper: Router
-def get_display_url(media_item):
-    """
-    Returns (final_url, is_viewable)
+    Returns (clean_url, is_viewable_image)
     """
     if not media_item: return None, False
     
@@ -110,18 +96,11 @@ def get_display_url(media_item):
     if clean_url.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp')):
         return url, True
         
-    # Case B: Verint Portal (Wrapper Page)
-    if "download_attachments" in clean_url:
-        # Try to unwrap it!
-        extracted_src = extract_image_from_verint(url)
-        if extracted_src:
-            return extracted_src, True # Success! We found the inner image
-        else:
-            return url, False # Failed to extract, fall back to "View Link" button
-            
-    return None, False
+    # Case B: Verint Portal or other Web Links
+    # We accept it, but flag it as "Not Viewable Inline"
+    return url, False
 
-# 8. Display Feed
+# 7. Display Feed
 if not df.empty:
     cols = st.columns(4)
     display_count = 0
@@ -131,8 +110,8 @@ if not df.empty:
         if 'duplicate' in notes:
             continue
 
-        # Get the URL (either direct or extracted)
-        full_url, is_viewable = get_display_url(row.get('media_url'))
+        # Get URL Info
+        full_url, is_viewable = get_image_info(row.get('media_url'))
         
         if full_url:
             col_index = display_count % 4
@@ -141,16 +120,17 @@ if not df.empty:
                 with st.container(border=True):
                     
                     if is_viewable:
+                        # Display real image
                         st.image(full_url, use_container_width=True)
                     else:
-                        # Fallback if extraction failed
+                        # Display "External Link" Card
                         st.markdown(f"""
-                            <div class="private-box">
-                                📸 <b>Image Link</b><br>
-                                <span style="font-size: 0.8em">Click to view on Portal</span>
+                            <div class="portal-card">
+                                <div style="font-size: 2em;">🌐</div>
+                                <div style="margin-top: 10px; font-size: 0.9em; color: #aaa;">View on Web Portal</div>
+                                <a href="{full_url}" target="_blank">Open Link</a>
                             </div>
                         """, unsafe_allow_html=True)
-                        st.markdown(f"[Open Image Page]({full_url})")
 
                     # Metadata
                     if 'requested_datetime' in row:
@@ -169,6 +149,7 @@ if not df.empty:
     if display_count == 0:
         st.info("No images found (duplicates filtered).")
     
+    # Load More Button
     st.markdown("---")
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
@@ -179,5 +160,6 @@ if not df.empty:
 else:
     st.info("No records found.")
 
+# Footer
 st.markdown("---")
 st.caption("Data source: [DataSF | Open Data Portal](https://data.sfgov.org/City-Infrastructure/311-Cases/vw6y-z8j6/about_data)")
