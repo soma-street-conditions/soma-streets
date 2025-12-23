@@ -15,14 +15,14 @@ st.markdown("""
         
         /* Style for the 'View on Portal' card */
         .portal-card {
-            background-color: #262730; /* Matches Streamlit Dark Mode */
+            background-color: #262730;
             border: 1px solid #444;
             border-radius: 5px;
             padding: 40px 10px;
             text-align: center;
             color: #ddd;
             margin-bottom: 10px;
-            height: 200px; /* Fixed height to match images approx */
+            height: 200px;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -59,9 +59,10 @@ st.markdown("---")
 ninety_days_ago = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%dT%H:%M:%S')
 base_url = "https://data.sfgov.org/resource/vw6y-z8j6.json"
 
-# 4. Query
+# 4. Query - REFINED
+# We now match either 'Encampment' categories OR the specific 'homelessness' subtype
 params = {
-    "$where": f"analysis_neighborhood = 'South of Market' AND requested_datetime > '{ninety_days_ago}' AND media_url IS NOT NULL AND (service_name LIKE '%General Request%' OR service_name LIKE '%Encampment%')",
+    "$where": f"analysis_neighborhood = 'South of Market' AND requested_datetime > '{ninety_days_ago}' AND media_url IS NOT NULL AND (service_subtype = 'homelessness_and_supportive_housing' OR service_name LIKE '%Encampment%')",
     "$order": "requested_datetime DESC",
     "$limit": st.session_state.limit
 }
@@ -97,7 +98,6 @@ def get_image_info(media_item):
         return url, True
         
     # Case B: Verint Portal or other Web Links
-    # We accept it, but flag it as "Not Viewable Inline"
     return url, False
 
 # 7. Display Feed
@@ -142,7 +142,7 @@ if not df.empty:
                     short_address = address.split(',')[0] 
                     map_url = f"https://www.google.com/maps/search/?api=1&query={address.replace(' ', '+')}"
                     
-                    st.markdown(f"**{date_str}** | [{short_address}]({map_url})")
+                    st.markdown(f"**{date_str}** | [{short_address}]({map_url}) | [Source]({full_url})")
             
             display_count += 1
             
