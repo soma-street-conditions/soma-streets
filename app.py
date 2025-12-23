@@ -8,7 +8,7 @@ st.set_page_config(page_title="SOMA Streets", page_icon="🏙️", layout="wide"
 
 # Header
 st.header("SOMA: Recent Street Conditions")
-st.write("Live feed of 'General Requests' and 'Encampments' (last 90 days).")
+st.write("Live feed of conditions in SoMa (last 90 days).")
 st.markdown("---")
 
 # 2. Date & API Setup
@@ -69,12 +69,11 @@ if not df.empty:
     display_count = 0  # Counter to ensure grid fills evenly
     
     for index, row in df.iterrows():
-        # Validate the image BEFORE trying to display
+        # Validate the image
         image_url = get_valid_image_url(row.get('media_url'))
         
         # If valid, show the card
         if image_url:
-            # Determine which column to place this card in
             col_index = display_count % 4
             
             with cols[col_index]:
@@ -83,8 +82,7 @@ if not df.empty:
                     # Display Image
                     st.image(image_url, use_container_width=True)
                     
-                    # Header
-                    st.subheader(f"{row.get('service_name', 'Report')}")
+                    # --- NO HEADER (Removed "Service Name") ---
                     
                     # Date & Map Link
                     if 'requested_datetime' in row:
@@ -95,6 +93,7 @@ if not df.empty:
                     address = row.get('address', 'Location N/A')
                     map_url = f"https://www.google.com/maps/search/?api=1&query={address.replace(' ', '+')}"
                     
+                    # Date | Address
                     st.markdown(f"**{date_str}** | [{address}]({map_url})")
                     
                     # Status
