@@ -16,6 +16,7 @@ st.markdown("""
         .stMarkdown p { font-size: 0.9rem; margin-bottom: 0px; }
         div.stButton > button { width: 100%; }
     </style>
+    <meta name="robots" content="noindex, nofollow">
 """, unsafe_allow_html=True)
 
 # 2. THE "HEIST" FUNCTION
@@ -88,9 +89,14 @@ def fetch_verint_image(wrapper_url):
         r_image = session.post(f"{api_base}?action=download_attachment&actionedby=&loadform=true&access=citizen&locale=en", json=download_payload, headers=headers, timeout=5)
         
         if r_image.status_code == 200:
-            b64_data = r_image.json().get('data', {}).get('txt_file', "")
-            if "," in b64_data: b64_data = b64_data.split(",")[1]
-            return base_64_bytes := base64.b64decode(b64_data)
+            try:
+                b64_data = r_image.json().get('data', {}).get('txt_file', "")
+                if "," in b64_data: b64_data = b64_data.split(",")[1]
+                # Fix: Standard assignment instead of Walrus operator
+                decoded_image = base64.b64decode(b64_data)
+                return decoded_image
+            except:
+                return None
             
     except: return None
     return None
@@ -98,6 +104,7 @@ def fetch_verint_image(wrapper_url):
 # 3. MAIN APP LOGIC
 st.header("SOMA: Street Conditions Dashboard")
 st.write("Daily feed of homelessness and encampment reports.")
+st.markdown("Download the Solve SF App to report your concerns. ([iOS](https://apps.apple.com/us/app/solve-sf/id6737751237) | [Android](https://play.google.com/store/apps/details?id=com.woahfinally.solvesf))")
 
 if 'limit' not in st.session_state: st.session_state.limit = 400
 
@@ -121,11 +128,12 @@ if not df.empty:
     for _, row in df.iterrows():
         if 'duplicate' in str(row.get('status_notes', '')).lower(): continue
         
-        url = row['media_url'].get('url') if isinstance(row['media_url'], dict) else row['media_url']
+        url_data = row.get('media_url')
+        url = url_data.get('url') if isinstance(url_data, dict) else url_data
         img_content = None
         
         # Determine how to fetch the image
-        if any(ext in str(url).lower() for ext in ['.jpg', '.jpeg', '.png']):
+        if any(ext in str(url).lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
             img_content = url # Standard direct URL
         elif "verintcloudservices" in str(url):
             img_content = fetch_verint_image(url) # Protected Verint URL
@@ -133,12 +141,25 @@ if not df.empty:
         if img_content:
             with cols[display_count % 4]:
                 with st.container(border=True):
+                    # Native Streamlit image handles both URLs and Bytes
                     st.image(img_content, use_container_width=True)
                     date_str = pd.to_datetime(row['requested_datetime']).strftime('%b %d, %I:%M %p')
                     address = row.get('address', 'SOMA').split(',')[0]
-                    st.markdown(f"**{date_str}** | {address}")
+                    map_url = f"https://www.google.com/maps/search/?api=1&query={row.get('address', '').replace(' ', '+')}"
+                    st.markdown(f"**{date_str}** | [{address}]({map_url})")
             display_count += 1
 
+    st.markdown("---")
     if st.button("Load More"):
         st.session_state.limit += 400
         st.rerun()
+
+# Footer & Methodology
+st.markdown("---")
+with st.expander("Methodology & Notes"):
+    st.markdown("""
+    **Filters Applied:**
+    * **Neighborhood:** South of Market (SOMA).
+    * **Categories:** 'Encampments' and 'Homeless Concerns'.
+    * **Handshake Logic:** Custom Python decoder used to bypass Verint Enterprise Form security for web-submitted photos.
+    """)
