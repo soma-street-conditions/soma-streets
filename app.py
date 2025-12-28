@@ -26,7 +26,6 @@ st.markdown("""
             margin-bottom: 30px;
             border-radius: 5px;
         }
-        /* Fixed height for map */
         .stPydeckChart { height: 600px; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
         div.stButton > button { width: 100%; border-radius: 8px; }
     </style>
@@ -34,117 +33,58 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ------------------------------------------------------------------
-# 2. DATA FETCHING: HEATMAP
+# 2. DATA FETCHING
 # ------------------------------------------------------------------
 @st.cache_data(ttl=3600)
 def get_citywide_heatmap_data():
     days_ago = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%dT%H:%M:%S')
     base_url = "https://data.sfgov.org/resource/vw6y-z8j6.json"
-    
-    # 1. Use upper() to make query case-insensitive (More robust)
-    # 2. Select 'lat' and 'long' explicitly
     params = {
         "$select": "lat, long", 
-        "$where": f"requested_datetime > '{days_ago}' AND (upper(service_subtype) LIKE '%HOMELESSNESS%' OR upper(service_name) LIKE '%ENCAMPMENT%')",
-        "$limit": 25000
+        "$where": f"requested_datetime > '{days_ago}' AND (service_subtype LIKE '%homelessness%' OR service_name LIKE '%Encampment%')",
+        "$limit": 30000
     }
-    
     try:
-        # Increased timeout to 45s to handle large data volume
-        r = requests.get(base_url, params=params, timeout=45)
-        
-        if r.status_code != 200:
-            return f"Error: API returned status {r.status_code}"
-            
-        data = r.json()
-        if not data:
-            return "No records found matching criteria."
-            
-        df = pd.DataFrame(data)
-        
-        # Check if we actually got coordinates
-        if 'lat' not in df.columns or 'long' not in df.columns:
-            return "Error: API result missing coordinate columns."
+        r = requests.get(base_url, params=params, timeout=30)
+        if r.status_code != 200: return pd.DataFrame()
+        df = pd.DataFrame(r.json())
+        if 'lat' in df.columns and 'long' in df.columns:
+            df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
+            df['lon'] = pd.to_numeric(df['long'], errors='coerce')
+            return df.dropna()
+        else: return pd.DataFrame()
+    except: return pd.DataFrame()
 
-        df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
-        df['lon'] = pd.to_numeric(df['long'], errors='coerce')
-        
-        # Drop invalid rows
-        df = df.dropna(subset=['lat', 'lon'])
-        
-        if df.empty:
-            return "Error: No valid coordinates found in data."
-            
-        return df
-        
-    except Exception as e:
-        return f"Connection Error: {str(e)}"
-
-# ------------------------------------------------------------------
-# 3. DATA FETCHING: VERINT DECODER
-# ------------------------------------------------------------------
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_verint_image(wrapper_url):
     try:
         session = requests.Session()
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Referer": "https://mobile311.sfgov.org/",
-        }
-        parsed = urlparse(wrapper_url)
-        qs = parse_qs(parsed.query)
+        headers = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "Referer": "https://mobile311.sfgov.org/" }
+        parsed = urlparse(wrapper_url); qs = parse_qs(parsed.query)
         url_case_id = qs.get('caseid', [None])[0]
         if not url_case_id: return None
-
         r_page = session.get(wrapper_url, headers=headers, timeout=5)
         html = r_page.text
-
-        formref_match = re.search(r'"formref"\s*:\s*"([^"]+)"', html)
-        if not formref_match: return None
-        formref = formref_match.group(1)
-        csrf_match = re.search(r'name="_csrf_token"\s+content="([^"]+)"', html)
-        csrf_token = csrf_match.group(1) if csrf_match else None
-
+        formref = re.search(r'"formref"\s*:\s*"([^"]+)"', html).group(1)
+        csrf = re.search(r'name="_csrf_token"\s+content="([^"]+)"', html)
+        csrf_token = csrf.group(1) if csrf else None
         try:
-            citizen_url = "https://sanfrancisco.form.us.empro.verintcloudservices.com/api/citizen?archived=Y&preview=false&locale=en"
-            headers["Referer"] = r_page.url
-            headers["Origin"] = "https://sanfrancisco.form.us.empro.verintcloudservices.com"
-            if csrf_token: headers["X-CSRF-TOKEN"] = csrf_token
-            r_handshake = session.get(citizen_url, headers=headers, timeout=5)
-            if 'Authorization' in r_handshake.headers:
-                headers["Authorization"] = r_handshake.headers['Authorization']
+            headers["X-CSRF-TOKEN"] = csrf_token
+            r_hand = session.get("https://sanfrancisco.form.us.empro.verintcloudservices.com/api/citizen?archived=Y&preview=false&locale=en", headers=headers, timeout=5)
+            if 'Authorization' in r_hand.headers: headers["Authorization"] = r_hand.headers['Authorization']
         except: pass
-
         api_base = "https://sanfrancisco.form.us.empro.verintcloudservices.com/api/custom"
-        headers["Content-Type"] = "application/json"
-        nested_payload = {
-            "data": {"caseid": str(url_case_id), "formref": formref},
-            "name": "download_attachments", "email": "", "xref": "", "xref1": "", "xref2": ""
-        }
-        r_list = session.post(f"{api_base}?action=get_attachments_details&actionedby=&loadform=true&access=citizen&locale=en", json=nested_payload, headers=headers, timeout=5)
-        files_data = r_list.json()
-        filename_str = files_data.get('data', {}).get('formdata_filenames', "")
-        
-        target_filename = None
-        for fname in filename_str.split(';'):
-            fname = fname.strip()
-            if fname and not any(x in fname.lower() for x in ['m.jpg', '_map.jpg', '_map.jpeg']):
-                target_filename = fname; break
-        if not target_filename: return None
-
-        download_payload = nested_payload.copy()
-        download_payload["data"]["filename"] = target_filename
-        r_image = session.post(f"{api_base}?action=download_attachment&actionedby=&loadform=true&access=citizen&locale=en", json=download_payload, headers=headers, timeout=5)
-        
-        if r_image.status_code == 200:
-            b64_data = r_image.json().get('data', {}).get('txt_file', "").split(",")[-1]
-            return base64.b64decode(b64_data)
+        payload = { "data": {"caseid": str(url_case_id), "formref": formref}, "name": "download_attachments" }
+        r_list = session.post(f"{api_base}?action=get_attachments_details&access=citizen", json=payload, headers=headers, timeout=5)
+        filename_str = r_list.json().get('data', {}).get('formdata_filenames', "")
+        target = next((f.strip() for f in filename_str.split(';') if f.strip() and not any(x in f.lower() for x in ['m.jpg', '_map'])), None)
+        if not target: return None
+        payload["data"]["filename"] = target
+        r_img = session.post(f"{api_base}?action=download_attachment&access=citizen", json=payload, headers=headers, timeout=5)
+        b64 = r_img.json().get('data', {}).get('txt_file', "").split(",")[-1]
+        return base64.b64decode(b64)
     except: return None
-    return None
 
-# ------------------------------------------------------------------
-# 4. SOMA DATA FETCHING
-# ------------------------------------------------------------------
 if 'limit' not in st.session_state: st.session_state.limit = 400
 
 @st.cache_data(ttl=300)
@@ -159,7 +99,7 @@ def get_soma_data(limit):
     return pd.DataFrame(r.json()) if r.status_code == 200 else pd.DataFrame()
 
 # ------------------------------------------------------------------
-# 5. UI LAYOUT
+# 3. UI LAYOUT
 # ------------------------------------------------------------------
 st.title("San Francisco Street Conditions Monitor")
 st.markdown("### The Reality of Our Streets")
@@ -180,43 +120,57 @@ Higher columns indicate a higher concentration of reports in that specific block
 
 map_data = get_citywide_heatmap_data()
 
-# Check if map_data is a DataFrame (Success) or String (Error Message)
-if isinstance(map_data, pd.DataFrame) and not map_data.empty:
+if not map_data.empty:
+    # Set Camera View
     view_state = pdk.ViewState(
-        latitude=37.76, 
-        longitude=-122.44, 
-        zoom=11.2, 
-        pitch=50, 
-        bearing=30
+        latitude=37.765, longitude=-122.42, zoom=11.8, pitch=35, bearing=15
     )
 
-    layer = pdk.Layer(
+    # 1. 3D Hexagon Layer (The Data)
+    hex_layer = pdk.Layer(
         "HexagonLayer",
         map_data,
         get_position=["lon", "lat"],
-        radius=100,
-        elevation_scale=4,
+        radius=40,           # Thinner bars (was 100) to see streets between them
+        elevation_scale=8,   # Taller bars to compensate for thinness
         elevation_range=[0, 1000],
         pickable=True,
         extruded=True,
         coverage=1,
+        opacity=0.6,         # Glass effect: See through the bars to the map
         color_range=[
-            [255, 237, 160],
-            [254, 178, 76],
-            [253, 141, 60],
-            [227, 26, 28],
-            [189, 0, 38]
+            [255, 237, 160], [254, 178, 76], [253, 141, 60],
+            [227, 26, 28], [189, 0, 38]
         ],
     )
 
+    # 2. Text Layer (The Labels)
+    # Floating labels to identify key hotspots
+    label_data = [
+        {"name": "SOMA", "lat": 37.778, "lon": -122.408},
+        {"name": "TENDERLOIN", "lat": 37.784, "lon": -122.414},
+        {"name": "MISSION", "lat": 37.760, "lon": -122.419},
+        {"name": "CIVIC CENTER", "lat": 37.779, "lon": -122.416}
+    ]
+    
+    text_layer = pdk.Layer(
+        "TextLayer",
+        label_data,
+        get_position=["lon", "lat"],
+        get_text="name",
+        get_color=[255, 255, 255],
+        get_size=16,
+        get_alignment_baseline="'bottom'",
+        font_weight="bold"
+    )
+
     st.pydeck_chart(pdk.Deck(
-        layers=[layer],
+        layers=[hex_layer, text_layer],
         initial_view_state=view_state,
         map_style=pdk.map_styles.CARTO_DARK,
-        tooltip={"text": "Concentration of Reports"}
+        tooltip={"text": "Reports in this block: {elevationValue}"}
     ))
 elif isinstance(map_data, str):
-    # Display the specific error message to help debug
     st.error(map_data)
 else:
     st.warning("Loading map data... If this persists, the API may be busy.")
@@ -234,7 +188,6 @@ df = get_soma_data(st.session_state.limit)
 
 if not df.empty:
     display_list = []
-    
     for _, row in df.iterrows():
         if 'duplicate' in str(row.get('status_notes', '')).lower(): continue
         url_data = row.get('media_url')
