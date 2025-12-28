@@ -121,33 +121,28 @@ Higher columns indicate a higher concentration of reports in that specific block
 map_data = get_citywide_heatmap_data()
 
 if not map_data.empty:
-    # UPDATED VIEW STATE: North-Up (Bearing 0) & Lower Pitch (25)
+    # UPDATED: Controller enabled for touch interaction
     view_state = pdk.ViewState(
-        latitude=37.765, 
-        longitude=-122.42, 
-        zoom=11.8, 
-        pitch=25,  # Lower angle for clearer map visibility
-        bearing=0  # North is Up
+        latitude=37.765, longitude=-122.42, zoom=11.8, pitch=25, bearing=0
     )
 
     hex_layer = pdk.Layer(
         "HexagonLayer",
         map_data,
         get_position=["lon", "lat"],
-        radius=40,           # Thin columns
-        elevation_scale=8,   # Tall dramatic spikes
+        radius=40,
+        elevation_scale=8,
         elevation_range=[0, 1000],
         pickable=True,
         extruded=True,
         coverage=1,
-        opacity=0.6,         # See-through glass effect
+        opacity=0.6,
         color_range=[
             [255, 237, 160], [254, 178, 76], [253, 141, 60],
             [227, 26, 28], [189, 0, 38]
         ],
     )
 
-    # Floating labels
     label_data = [
         {"name": "SOMA", "lat": 37.778, "lon": -122.408},
         {"name": "TENDERLOIN", "lat": 37.784, "lon": -122.414},
@@ -170,7 +165,8 @@ if not map_data.empty:
         layers=[hex_layer, text_layer],
         initial_view_state=view_state,
         map_style=pdk.map_styles.CARTO_DARK,
-        tooltip={"text": "Reports in this block: {elevationValue}"}
+        tooltip={"text": "Reports in this block: {elevationValue}"},
+        controller=True # <--- This enables 2-finger rotate and tilt
     ))
 elif isinstance(map_data, str):
     st.error(map_data)
