@@ -26,46 +26,41 @@ st.markdown("""
             margin-bottom: 30px;
             border-radius: 5px;
         }
-        .stPydeckChart { border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+        /* Enforce height on the map container */
+        .stPydeckChart { height: 500px; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
         div.stButton > button { width: 100%; border-radius: 8px; }
     </style>
     <meta name="robots" content="noindex, nofollow">
 """, unsafe_allow_html=True)
 
 # ------------------------------------------------------------------
-# 2. DATA FETCHING: HEATMAP (Fixed Column Name 'long')
+# 2. DATA FETCHING: HEATMAP
 # ------------------------------------------------------------------
 @st.cache_data(ttl=3600)
 def get_citywide_heatmap_data():
-    # UPDATED: Extended to 90 days to match your 13k record count
+    # 90-day window for density context
     days_ago = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%dT%H:%M:%S')
     base_url = "https://data.sfgov.org/resource/vw6y-z8j6.json"
     
-    # FIXED: Changed 'lon' to 'long' based on DataSF schema
+    # Selecting only lat/long
     params = {
         "$select": "lat, long", 
         "$where": f"requested_datetime > '{days_ago}' AND (service_subtype LIKE '%homelessness%' OR service_name LIKE '%Encampment%')",
-        "$limit": 20000 # Enough to cover the 13,230 records
+        "$limit": 25000
     }
     
     try:
         r = requests.get(base_url, params=params, timeout=30)
-        if r.status_code != 200:
-            st.error(f"Map Data Error: API returned {r.status_code}")
-            return pd.DataFrame()
-            
+        if r.status_code != 200: return pd.DataFrame()
         df = pd.DataFrame(r.json())
         
-        # Verify columns exist before processing
         if 'lat' in df.columns and 'long' in df.columns:
             df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
-            df['lon'] = pd.to_numeric(df['long'], errors='coerce') # Rename to 'lon' for Pydeck
+            df['lon'] = pd.to_numeric(df['long'], errors='coerce')
             return df.dropna()
         else:
             return pd.DataFrame()
-        
-    except Exception as e:
-        st.error(f"Map Data Failed: {str(e)}")
+    except:
         return pd.DataFrame()
 
 # ------------------------------------------------------------------
@@ -110,7 +105,8 @@ def fetch_verint_image(wrapper_url):
             "name": "download_attachments", "email": "", "xref": "", "xref1": "", "xref2": ""
         }
         r_list = session.post(f"{api_base}?action=get_attachments_details&actionedby=&loadform=true&access=citizen&locale=en", json=nested_payload, headers=headers, timeout=5)
-        filename_str = r_list.json().get('data', {}).get('formdata_filenames', "")
+        files_data = r_list.json()
+        filename_str = files_data.get('data', {}).get('formdata_filenames', "")
         
         target_filename = None
         for fname in filename_str.split(';'):
@@ -162,30 +158,45 @@ st.markdown("""
 st.header("1. City-Wide Scale")
 st.markdown("""
 This map visualizes the density of **Homeless Concerns** and **Encampment** reports across San Francisco over the **last 90 days**. 
-It demonstrates that while specific neighborhoods bear a heavy load, this is a systemic city-wide crisis requiring broad intervention.
 """)
 
 heatmap_df = get_citywide_heatmap_data()
 
 if not heatmap_df.empty:
+    # 1. Set the initial view to cover the whole city (Twin Peaks Center)
+    view_state = pdk.ViewState(
+        latitude=37.755, # Geometric center of SF
+        longitude=-122.44, 
+        zoom=11.5, 
+        pitch=45 # Tilted view for depth
+    )
+
+    # 2. Configure the "Glowing" Heatmap Layer
+    layer = pdk.Layer(
+        "HeatmapLayer",
+        heatmap_df,
+        get_position=["lon", "lat"],
+        opacity=0.8,
+        # Higher radius = smoother, less pixelated "fog"
+        radius_pixels=50, 
+        # Lower threshold = catches even single reports (don't hide the problem)
+        threshold=0.02,
+        # Color Scale: Transparent -> Yellow -> Orange -> Red -> Purple/White
+        color_range=[
+            [255, 255, 178, 100], 
+            [254, 204, 92, 150],
+            [253, 141, 60, 200],
+            [240, 59, 32, 220],
+            [189, 0, 38, 255]
+        ]
+    )
+
+    # 3. Render Deck with CARTO_DARK base map (No API Key needed)
     st.pydeck_chart(pdk.Deck(
-        map_style="mapbox://styles/mapbox/dark-v10",
-        initial_view_state=pdk.ViewState(latitude=37.7749, longitude=-122.4194, zoom=11.5, pitch=45),
-        layers=[
-            pdk.Layer(
-                "HeatmapLayer",
-                heatmap_df,
-                get_position=["lon", "lat"],
-                auto_highlight=True,
-                radius_pixels=30,
-                intensity=1,
-                threshold=0.05,
-                color_range=[
-                    [255, 255, 178], [254, 217, 118], [254, 178, 76],
-                    [253, 141, 60], [240, 59, 32], [189, 0, 38]
-                ],
-            )
-        ],
+        layers=[layer],
+        initial_view_state=view_state,
+        map_style=pdk.map_styles.CARTO_DARK,
+        tooltip={"text": "High Concentration of Reports"}
     ))
 else:
     st.warning("Loading map data... If this persists, the API may be busy.")
