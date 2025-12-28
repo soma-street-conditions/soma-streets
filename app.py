@@ -166,12 +166,15 @@ if isinstance(map_data, pd.DataFrame) and not map_data.empty:
         font_weight="bold"
     )
 
-    # REMOVED controller=True to prevent crash. 
-    # Interactivity is enabled by default via view_state.
+    # --- FIX: USE EXPLICIT VIEW CONTROLLER ---
+    # This works on older Pydeck versions where "controller=True" causes a crash.
+    view = pdk.View(type="MapView", controller=True)
+
     st.pydeck_chart(pdk.Deck(
         layers=[hex_layer, text_layer],
         initial_view_state=view_state,
         map_style=pdk.map_styles.CARTO_DARK,
+        views=[view], # Explicitly defining the view with controller enabled
         tooltip={"text": "Reports in this block: {elevationValue}"}
     ))
 elif isinstance(map_data, str):
