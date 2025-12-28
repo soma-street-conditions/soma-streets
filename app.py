@@ -26,7 +26,7 @@ st.markdown("""
             margin-bottom: 30px;
             border-radius: 5px;
         }
-        /* Taller map for dramatic 3D effect */
+        /* Fixed height for map */
         .stPydeckChart { height: 600px; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
         div.stButton > button { width: 100%; border-radius: 8px; }
     </style>
@@ -34,33 +34,51 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ------------------------------------------------------------------
-# 2. DATA FETCHING: MAP DATA
+# 2. DATA FETCHING: HEATMAP
 # ------------------------------------------------------------------
 @st.cache_data(ttl=3600)
 def get_citywide_heatmap_data():
     days_ago = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%dT%H:%M:%S')
     base_url = "https://data.sfgov.org/resource/vw6y-z8j6.json"
     
-    # Fetch lat/long for 90 days
+    # 1. Use upper() to make query case-insensitive (More robust)
+    # 2. Select 'lat' and 'long' explicitly
     params = {
         "$select": "lat, long", 
-        "$where": f"requested_datetime > '{days_ago}' AND (service_subtype LIKE '%homelessness%' OR service_name LIKE '%Encampment%')",
-        "$limit": 30000
+        "$where": f"requested_datetime > '{days_ago}' AND (upper(service_subtype) LIKE '%HOMELESSNESS%' OR upper(service_name) LIKE '%ENCAMPMENT%')",
+        "$limit": 25000
     }
     
     try:
-        r = requests.get(base_url, params=params, timeout=30)
-        if r.status_code != 200: return pd.DataFrame()
-        df = pd.DataFrame(r.json())
+        # Increased timeout to 45s to handle large data volume
+        r = requests.get(base_url, params=params, timeout=45)
         
-        if 'lat' in df.columns and 'long' in df.columns:
-            df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
-            df['lon'] = pd.to_numeric(df['long'], errors='coerce')
-            return df.dropna()
-        else:
-            return pd.DataFrame()
-    except:
-        return pd.DataFrame()
+        if r.status_code != 200:
+            return f"Error: API returned status {r.status_code}"
+            
+        data = r.json()
+        if not data:
+            return "No records found matching criteria."
+            
+        df = pd.DataFrame(data)
+        
+        # Check if we actually got coordinates
+        if 'lat' not in df.columns or 'long' not in df.columns:
+            return "Error: API result missing coordinate columns."
+
+        df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
+        df['lon'] = pd.to_numeric(df['long'], errors='coerce')
+        
+        # Drop invalid rows
+        df = df.dropna(subset=['lat', 'lon'])
+        
+        if df.empty:
+            return "Error: No valid coordinates found in data."
+            
+        return df
+        
+    except Exception as e:
+        return f"Connection Error: {str(e)}"
 
 # ------------------------------------------------------------------
 # 3. DATA FETCHING: VERINT DECODER
@@ -153,37 +171,35 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# --- 3D HEXAGON MAP SECTION ---
+# --- MAP SECTION ---
 st.header("1. City-Wide Scale")
 st.markdown("""
 This map visualizes the density of **Homeless Concerns** and **Encampment** reports across San Francisco over the **last 90 days**. 
 Higher columns indicate a higher concentration of reports in that specific block.
 """)
 
-heatmap_df = get_citywide_heatmap_data()
+map_data = get_citywide_heatmap_data()
 
-if not heatmap_df.empty:
-    # 1. View State: Angled 3D view centered on Twin Peaks
+# Check if map_data is a DataFrame (Success) or String (Error Message)
+if isinstance(map_data, pd.DataFrame) and not map_data.empty:
     view_state = pdk.ViewState(
         latitude=37.76, 
         longitude=-122.44, 
         zoom=11.2, 
-        pitch=50, # Steep angle for 3D effect
+        pitch=50, 
         bearing=30
     )
 
-    # 2. Hexagon Layer: 3D Columns
     layer = pdk.Layer(
         "HexagonLayer",
-        heatmap_df,
+        map_data,
         get_position=["lon", "lat"],
-        radius=100,  # Radius of each column in meters
-        elevation_scale=4, # Height multiplier
+        radius=100,
+        elevation_scale=4,
         elevation_range=[0, 1000],
         pickable=True,
-        extruded=True, # This makes them 3D
+        extruded=True,
         coverage=1,
-        # Color Scale: Yellow -> Orange -> Red -> Deep Purple (Severe)
         color_range=[
             [255, 237, 160],
             [254, 178, 76],
@@ -193,13 +209,15 @@ if not heatmap_df.empty:
         ],
     )
 
-    # 3. Render Deck
     st.pydeck_chart(pdk.Deck(
         layers=[layer],
         initial_view_state=view_state,
         map_style=pdk.map_styles.CARTO_DARK,
         tooltip={"text": "Concentration of Reports"}
     ))
+elif isinstance(map_data, str):
+    # Display the specific error message to help debug
+    st.error(map_data)
 else:
     st.warning("Loading map data... If this persists, the API may be busy.")
 
