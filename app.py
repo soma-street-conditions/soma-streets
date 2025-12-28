@@ -26,27 +26,26 @@ st.markdown("""
             margin-bottom: 30px;
             border-radius: 5px;
         }
-        /* Enforce height on the map container */
-        .stPydeckChart { height: 500px; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+        /* Taller map for dramatic 3D effect */
+        .stPydeckChart { height: 600px; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
         div.stButton > button { width: 100%; border-radius: 8px; }
     </style>
     <meta name="robots" content="noindex, nofollow">
 """, unsafe_allow_html=True)
 
 # ------------------------------------------------------------------
-# 2. DATA FETCHING: HEATMAP
+# 2. DATA FETCHING: MAP DATA
 # ------------------------------------------------------------------
 @st.cache_data(ttl=3600)
 def get_citywide_heatmap_data():
-    # 90-day window for density context
     days_ago = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%dT%H:%M:%S')
     base_url = "https://data.sfgov.org/resource/vw6y-z8j6.json"
     
-    # Selecting only lat/long
+    # Fetch lat/long for 90 days
     params = {
         "$select": "lat, long", 
         "$where": f"requested_datetime > '{days_ago}' AND (service_subtype LIKE '%homelessness%' OR service_name LIKE '%Encampment%')",
-        "$limit": 25000
+        "$limit": 30000
     }
     
     try:
@@ -154,49 +153,52 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# --- HEATMAP SECTION ---
+# --- 3D HEXAGON MAP SECTION ---
 st.header("1. City-Wide Scale")
 st.markdown("""
 This map visualizes the density of **Homeless Concerns** and **Encampment** reports across San Francisco over the **last 90 days**. 
+Higher columns indicate a higher concentration of reports in that specific block.
 """)
 
 heatmap_df = get_citywide_heatmap_data()
 
 if not heatmap_df.empty:
-    # 1. Set the initial view to cover the whole city (Twin Peaks Center)
+    # 1. View State: Angled 3D view centered on Twin Peaks
     view_state = pdk.ViewState(
-        latitude=37.755, # Geometric center of SF
+        latitude=37.76, 
         longitude=-122.44, 
-        zoom=11.5, 
-        pitch=45 # Tilted view for depth
+        zoom=11.2, 
+        pitch=50, # Steep angle for 3D effect
+        bearing=30
     )
 
-    # 2. Configure the "Glowing" Heatmap Layer
+    # 2. Hexagon Layer: 3D Columns
     layer = pdk.Layer(
-        "HeatmapLayer",
+        "HexagonLayer",
         heatmap_df,
         get_position=["lon", "lat"],
-        opacity=0.8,
-        # Higher radius = smoother, less pixelated "fog"
-        radius_pixels=50, 
-        # Lower threshold = catches even single reports (don't hide the problem)
-        threshold=0.02,
-        # Color Scale: Transparent -> Yellow -> Orange -> Red -> Purple/White
+        radius=100,  # Radius of each column in meters
+        elevation_scale=4, # Height multiplier
+        elevation_range=[0, 1000],
+        pickable=True,
+        extruded=True, # This makes them 3D
+        coverage=1,
+        # Color Scale: Yellow -> Orange -> Red -> Deep Purple (Severe)
         color_range=[
-            [255, 255, 178, 100], 
-            [254, 204, 92, 150],
-            [253, 141, 60, 200],
-            [240, 59, 32, 220],
-            [189, 0, 38, 255]
-        ]
+            [255, 237, 160],
+            [254, 178, 76],
+            [253, 141, 60],
+            [227, 26, 28],
+            [189, 0, 38]
+        ],
     )
 
-    # 3. Render Deck with CARTO_DARK base map (No API Key needed)
+    # 3. Render Deck
     st.pydeck_chart(pdk.Deck(
         layers=[layer],
         initial_view_state=view_state,
         map_style=pdk.map_styles.CARTO_DARK,
-        tooltip={"text": "High Concentration of Reports"}
+        tooltip={"text": "Concentration of Reports"}
     ))
 else:
     st.warning("Loading map data... If this persists, the API may be busy.")
