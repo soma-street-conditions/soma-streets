@@ -33,7 +33,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ------------------------------------------------------------------
-# 2. DATA FETCHING
+# 2. DATA FETCHING: HEATMAP
 # ------------------------------------------------------------------
 @st.cache_data(ttl=3600)
 def get_citywide_heatmap_data():
@@ -55,6 +55,9 @@ def get_citywide_heatmap_data():
         else: return pd.DataFrame()
     except: return pd.DataFrame()
 
+# ------------------------------------------------------------------
+# 3. DATA FETCHING: VERINT DECODER
+# ------------------------------------------------------------------
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_verint_image(wrapper_url):
     try:
@@ -85,6 +88,9 @@ def fetch_verint_image(wrapper_url):
         return base64.b64decode(b64)
     except: return None
 
+# ------------------------------------------------------------------
+# 4. SOMA DATA FETCHING
+# ------------------------------------------------------------------
 if 'limit' not in st.session_state: st.session_state.limit = 400
 
 @st.cache_data(ttl=300)
@@ -99,7 +105,7 @@ def get_soma_data(limit):
     return pd.DataFrame(r.json()) if r.status_code == 200 else pd.DataFrame()
 
 # ------------------------------------------------------------------
-# 3. UI LAYOUT
+# 5. UI LAYOUT
 # ------------------------------------------------------------------
 st.title("San Francisco Street Conditions Monitor")
 st.markdown("### The Reality of Our Streets")
@@ -120,8 +126,7 @@ Higher columns indicate a higher concentration of reports in that specific block
 
 map_data = get_citywide_heatmap_data()
 
-if not map_data.empty:
-    # UPDATED: Controller enabled for touch interaction
+if isinstance(map_data, pd.DataFrame) and not map_data.empty:
     view_state = pdk.ViewState(
         latitude=37.765, longitude=-122.42, zoom=11.8, pitch=25, bearing=0
     )
@@ -166,7 +171,7 @@ if not map_data.empty:
         initial_view_state=view_state,
         map_style=pdk.map_styles.CARTO_DARK,
         tooltip={"text": "Reports in this block: {elevationValue}"},
-        controller=True # <--- This enables 2-finger rotate and tilt
+        controller=True  # RESTORED: Enables rotation and pitch on touchscreens
     ))
 elif isinstance(map_data, str):
     st.error(map_data)
