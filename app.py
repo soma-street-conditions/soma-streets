@@ -121,31 +121,33 @@ Higher columns indicate a higher concentration of reports in that specific block
 map_data = get_citywide_heatmap_data()
 
 if not map_data.empty:
-    # Set Camera View
+    # UPDATED VIEW STATE: North-Up (Bearing 0) & Lower Pitch (25)
     view_state = pdk.ViewState(
-        latitude=37.765, longitude=-122.42, zoom=11.8, pitch=35, bearing=15
+        latitude=37.765, 
+        longitude=-122.42, 
+        zoom=11.8, 
+        pitch=25,  # Lower angle for clearer map visibility
+        bearing=0  # North is Up
     )
 
-    # 1. 3D Hexagon Layer (The Data)
     hex_layer = pdk.Layer(
         "HexagonLayer",
         map_data,
         get_position=["lon", "lat"],
-        radius=40,           # Thinner bars (was 100) to see streets between them
-        elevation_scale=8,   # Taller bars to compensate for thinness
+        radius=40,           # Thin columns
+        elevation_scale=8,   # Tall dramatic spikes
         elevation_range=[0, 1000],
         pickable=True,
         extruded=True,
         coverage=1,
-        opacity=0.6,         # Glass effect: See through the bars to the map
+        opacity=0.6,         # See-through glass effect
         color_range=[
             [255, 237, 160], [254, 178, 76], [253, 141, 60],
             [227, 26, 28], [189, 0, 38]
         ],
     )
 
-    # 2. Text Layer (The Labels)
-    # Floating labels to identify key hotspots
+    # Floating labels
     label_data = [
         {"name": "SOMA", "lat": 37.778, "lon": -122.408},
         {"name": "TENDERLOIN", "lat": 37.784, "lon": -122.414},
