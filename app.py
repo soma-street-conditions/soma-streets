@@ -14,15 +14,11 @@ st.set_page_config(page_title="SF Street Conditions", page_icon="⚠️", layout
 
 st.markdown("""
     <style>
-        /* Tighter spacing */
         div[data-testid="stVerticalBlock"] > div { gap: 0.5rem; }
-        
-        /* Typography adjustments */
         h1 { margin-bottom: 0px; padding-bottom: 0px; }
         h3 { margin-top: 20px; color: #ff4b4b; } 
         .stMarkdown p { font-size: 1rem; line-height: 1.5; color: #e0e0e0; }
         
-        /* Mission Statement Box */
         .mission-box {
             background-color: #262730;
             border-left: 5px solid #ff4b4b;
@@ -30,37 +26,51 @@ st.markdown("""
             margin-bottom: 30px;
             border-radius: 5px;
         }
-        
-        /* Map container styling */
         .stPydeckChart { border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-        
-        /* Button styling */
         div.stButton > button { width: 100%; border-radius: 8px; }
     </style>
     <meta name="robots" content="noindex, nofollow">
 """, unsafe_allow_html=True)
 
 # ------------------------------------------------------------------
-# 2. DATA FETCHING (Keep all existing robust logic)
+# 2. DATA FETCHING: HEATMAP (Fixed Column Name 'long')
 # ------------------------------------------------------------------
 @st.cache_data(ttl=3600)
 def get_citywide_heatmap_data():
-    days_ago = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%dT%H:%M:%S')
+    # UPDATED: Extended to 90 days to match your 13k record count
+    days_ago = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%dT%H:%M:%S')
     base_url = "https://data.sfgov.org/resource/vw6y-z8j6.json"
+    
+    # FIXED: Changed 'lon' to 'long' based on DataSF schema
     params = {
-        "$select": "lat, lon",
-        "$where": f"requested_datetime > '{days_ago}' AND (service_subtype = 'homelessness_and_supportive_housing' OR service_name LIKE '%Encampment%')",
-        "$limit": 25000
+        "$select": "lat, long", 
+        "$where": f"requested_datetime > '{days_ago}' AND (service_subtype LIKE '%homelessness%' OR service_name LIKE '%Encampment%')",
+        "$limit": 20000 # Enough to cover the 13,230 records
     }
+    
     try:
-        r = requests.get(base_url, params=params, timeout=10)
-        if r.status_code != 200: return pd.DataFrame()
+        r = requests.get(base_url, params=params, timeout=30)
+        if r.status_code != 200:
+            st.error(f"Map Data Error: API returned {r.status_code}")
+            return pd.DataFrame()
+            
         df = pd.DataFrame(r.json())
-        df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
-        df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
-        return df.dropna()
-    except: return pd.DataFrame()
+        
+        # Verify columns exist before processing
+        if 'lat' in df.columns and 'long' in df.columns:
+            df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
+            df['lon'] = pd.to_numeric(df['long'], errors='coerce') # Rename to 'lon' for Pydeck
+            return df.dropna()
+        else:
+            return pd.DataFrame()
+        
+    except Exception as e:
+        st.error(f"Map Data Failed: {str(e)}")
+        return pd.DataFrame()
 
+# ------------------------------------------------------------------
+# 3. DATA FETCHING: VERINT DECODER
+# ------------------------------------------------------------------
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_verint_image(wrapper_url):
     try:
@@ -73,19 +83,26 @@ def fetch_verint_image(wrapper_url):
         qs = parse_qs(parsed.query)
         url_case_id = qs.get('caseid', [None])[0]
         if not url_case_id: return None
+
         r_page = session.get(wrapper_url, headers=headers, timeout=5)
         html = r_page.text
-        formref = re.search(r'"formref"\s*:\s*"([^"]+)"', html).group(1)
+
+        formref_match = re.search(r'"formref"\s*:\s*"([^"]+)"', html)
+        if not formref_match: return None
+        formref = formref_match.group(1)
         csrf_match = re.search(r'name="_csrf_token"\s+content="([^"]+)"', html)
         csrf_token = csrf_match.group(1) if csrf_match else None
+
         try:
             citizen_url = "https://sanfrancisco.form.us.empro.verintcloudservices.com/api/citizen?archived=Y&preview=false&locale=en"
             headers["Referer"] = r_page.url
             headers["Origin"] = "https://sanfrancisco.form.us.empro.verintcloudservices.com"
             if csrf_token: headers["X-CSRF-TOKEN"] = csrf_token
             r_handshake = session.get(citizen_url, headers=headers, timeout=5)
-            if 'Authorization' in r_handshake.headers: headers["Authorization"] = r_handshake.headers['Authorization']
+            if 'Authorization' in r_handshake.headers:
+                headers["Authorization"] = r_handshake.headers['Authorization']
         except: pass
+
         api_base = "https://sanfrancisco.form.us.empro.verintcloudservices.com/api/custom"
         headers["Content-Type"] = "application/json"
         nested_payload = {
@@ -93,23 +110,28 @@ def fetch_verint_image(wrapper_url):
             "name": "download_attachments", "email": "", "xref": "", "xref1": "", "xref2": ""
         }
         r_list = session.post(f"{api_base}?action=get_attachments_details&actionedby=&loadform=true&access=citizen&locale=en", json=nested_payload, headers=headers, timeout=5)
-        files_data = r_list.json()
-        filename_str = files_data.get('data', {}).get('formdata_filenames', "")
+        filename_str = r_list.json().get('data', {}).get('formdata_filenames', "")
+        
         target_filename = None
         for fname in filename_str.split(';'):
             fname = fname.strip()
-            if fname and not any(x in fname.lower() for x in ['m.jpg', '_map.jpg']):
+            if fname and not any(x in fname.lower() for x in ['m.jpg', '_map.jpg', '_map.jpeg']):
                 target_filename = fname; break
         if not target_filename: return None
+
         download_payload = nested_payload.copy()
         download_payload["data"]["filename"] = target_filename
         r_image = session.post(f"{api_base}?action=download_attachment&actionedby=&loadform=true&access=citizen&locale=en", json=download_payload, headers=headers, timeout=5)
+        
         if r_image.status_code == 200:
             b64_data = r_image.json().get('data', {}).get('txt_file', "").split(",")[-1]
             return base64.b64decode(b64_data)
     except: return None
     return None
 
+# ------------------------------------------------------------------
+# 4. SOMA DATA FETCHING
+# ------------------------------------------------------------------
 if 'limit' not in st.session_state: st.session_state.limit = 400
 
 @st.cache_data(ttl=300)
@@ -124,7 +146,7 @@ def get_soma_data(limit):
     return pd.DataFrame(r.json()) if r.status_code == 200 else pd.DataFrame()
 
 # ------------------------------------------------------------------
-# 3. NARRATIVE HEADER
+# 5. UI LAYOUT
 # ------------------------------------------------------------------
 st.title("San Francisco Street Conditions Monitor")
 st.markdown("### The Reality of Our Streets")
@@ -136,12 +158,10 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ------------------------------------------------------------------
-# 4. SECTION: CITY-WIDE CONTEXT (HEATMAP)
-# ------------------------------------------------------------------
+# --- HEATMAP SECTION ---
 st.header("1. City-Wide Scale")
 st.markdown("""
-This map visualizes the density of **Homeless Concerns** and **Encampment** reports across San Francisco over the last 30 days. 
+This map visualizes the density of **Homeless Concerns** and **Encampment** reports across San Francisco over the **last 90 days**. 
 It demonstrates that while specific neighborhoods bear a heavy load, this is a systemic city-wide crisis requiring broad intervention.
 """)
 
@@ -157,7 +177,7 @@ if not heatmap_df.empty:
                 heatmap_df,
                 get_position=["lon", "lat"],
                 auto_highlight=True,
-                radius_pixels=40,
+                radius_pixels=30,
                 intensity=1,
                 threshold=0.05,
                 color_range=[
@@ -168,13 +188,11 @@ if not heatmap_df.empty:
         ],
     ))
 else:
-    st.info("Loading city-wide data...")
+    st.warning("Loading map data... If this persists, the API may be busy.")
 
 st.markdown("---")
 
-# ------------------------------------------------------------------
-# 5. SECTION: ON-THE-GROUND REALITY (SOMA FEED)
-# ------------------------------------------------------------------
+# --- SOMA PHOTOS SECTION ---
 st.header("2. On-the-Ground Reality: SOMA")
 st.markdown("""
 Below is a daily feed of resident-submitted evidence from the **South of Market** neighborhood. 
@@ -186,7 +204,6 @@ df = get_soma_data(st.session_state.limit)
 if not df.empty:
     display_list = []
     
-    # Pre-process & filter
     for _, row in df.iterrows():
         if 'duplicate' in str(row.get('status_notes', '')).lower(): continue
         url_data = row.get('media_url')
@@ -201,7 +218,6 @@ if not df.empty:
         if img_content:
             display_list.append({'content': img_content, 'row': row})
 
-    # Row-first grid display (Mobile Optimized)
     batch_size = 4
     for i in range(0, len(display_list), batch_size):
         cols = st.columns(batch_size)
@@ -221,16 +237,13 @@ if not df.empty:
         st.session_state.limit += 400
         st.rerun()
 
-# ------------------------------------------------------------------
-# 6. FOOTER
-# ------------------------------------------------------------------
 st.markdown("---")
 with st.expander("Methodology & Data Transparency"):
     st.markdown("""
     **Data Sources:**
-    * **Map:** City-wide reports (Lat/Lon only) from the last 30 days via DataSF.
+    * **Map:** City-wide reports (Lat/Long) from the last 90 days.
     * **Photos:** SOMA-specific reports from the last 90 days.
     
     **Technical Note:**
-    Images submitted via the 'Web' source are hosted on a secure enterprise portal. This application uses a custom session handshake to decrypt and display these images alongside public mobile reports to ensure a complete record of conditions.
+    Images submitted via the 'Web' source are hosted on a secure enterprise portal. This application uses a custom session handshake to decrypt and display these images alongside public mobile reports.
     """)
